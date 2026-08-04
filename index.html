@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vital Cerámica · Panel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Nunito+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<style>
+  :root{
+    --verde-bosque:#3F4A34;
+    --verde-bosque-d:#2E3626;
+    --verde-apagado:#6B7860;
+    --arena:#E8DCC0;
+    --ocre:#C9A45C;
+    --ocre-d:#B08C42;
+    --hueso:#F7F3E9;
+    --texto:#2B2E22;
+    --texto-suave:#5B6152;
+    --rojo:#B2543F;
+    --borde: rgba(63,74,52,0.14);
+    --sombra: 0 8px 24px rgba(46,54,38,0.10);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    font-family:'Nunito Sans', sans-serif;
+    background:var(--hueso);
+    color:var(--texto);
+    min-height:100vh;
+  }
+  h1,h2,h3,.display{
+    font-family:'Fraunces', serif;
+    font-weight:600;
+    letter-spacing:-0.01em;
+  }
+  ::selection{background:var(--ocre); color:var(--hueso);}
+
+  /* ---------- LOGIN ---------- */
+  #login-screen{
+    min-height:100vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:
+      radial-gradient(circle at 30% 20%, rgba(201,164,92,0.18), transparent 55%),
+      var(--verde-bosque);
+    padding:24px;
+  }
+  .login-card{
+    background:var(--hueso);
+    border-radius:20px;
+    padding:44px 36px 36px;
+    width:100%;
+    max-width:380px;
+    box-shadow:0 24px 60px rgba(0,0,0,0.35);
+    text-align:center;
+  }
+  .wheel-wrap{
+    width:104px;height:104px;margin:0 auto 18px;
+    position:relative;
+  }
+  .wheel-wrap svg{width:100%;height:100%;}
+  .wheel-spin{
+    transform-origin:52px 84px;
+    animation:spin 6s linear infinite;
+  }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+  .vase-path{
+    stroke:var(--ocre-d);
+    stroke-width:2.4;
+    fill:none;
+    stroke-linecap:round;
+    stroke-linejoin:round;
+    stroke-dasharray:220;
+    stroke-dashoffset:220;
+    animation:draw 1.6s ease forwards 0.3s;
+  }
+  @keyframes draw{ to{ stroke-dashoffset:0; } }
+  .login-card h1{font-size:26px;color:var(--verde-bosque-d);margin:0 0 2px;}
+  .login-card p.sub{color:var(--texto-suave);margin:0 0 26px;font-size:14px;letter-spacing:0.03em;text-transform:uppercase;}
+  .field{text-align:left;margin-bottom:14px;}
+  .field label{display:block;font-size:12.5px;font-weight:700;color:var(--verde-bosque-d);margin-bottom:5px;letter-spacing:0.02em;}
+  .field input{
+    width:100%;padding:11px 13px;border-radius:10px;border:1.5px solid var(--borde);
+    background:#fff;font-size:15px;font-family:inherit;color:var(--texto);
+    transition:border-color .15s, box-shadow .15s;
+  }
+  .field input:focus{outline:none;border-color:var(--ocre);box-shadow:0 0 0 3px rgba(201,164,92,0.22);}
+  .btn{
+    width:100%;padding:12px;border:none;border-radius:10px;
+    background:var(--verde-bosque);color:var(--hueso);font-weight:700;font-size:15px;
+    cursor:pointer;font-family:inherit;transition:background .15s, transform .1s;
+    margin-top:6px;
+  }
+  .btn:hover{background:var(--verde-bosque-d);}
+  .btn:active{transform:scale(0.98);}
+  .btn.ocre{background:var(--ocre);color:var(--verde-bosque-d);}
+  .btn.ocre:hover{background:var(--ocre-d);}
+  .btn.ghost{background:transparent;border:1.5px solid var(--borde);color:var(--texto);}
+  .btn-sm{padding:7px 12px;font-size:13px;border-radius:8px;width:auto;}
+  .error-msg{color:var(--rojo);font-size:13px;margin-top:10px;min-height:16px;}
+
+  /* ---------- APP SHELL ---------- */
+  #app-screen{display:none; min-height:100vh;}
+  .topbar{
+    background:var(--verde-bosque);color:var(--hueso);
+    display:flex;align-items:center;justify-content:space-between;
+    padding:14px 22px; position:sticky; top:0; z-index:20;
+    box-shadow:0 4px 14px rgba(0,0,0,0.12);
+  }
+  .brand{display:flex;align-items:center;gap:10px;}
+  .brand-mark{width:30px;height:30px;flex-shrink:0;}
+  .brand span{font-family:'Fraunces',serif;font-size:19px;font-weight:600;}
+  .topbar .logout{background:rgba(255,255,255,0.12);color:var(--hueso);border:none;
+    padding:8px 14px;border-radius:8px;font-family:inherit;font-size:13px;cursor:pointer;font-weight:700;}
+  .topbar .logout:hover{background:rgba(255,255,255,0.22);}
+
+  .tabs{
+    display:flex; gap:4px; background:#fff; padding:6px; margin:16px auto 0;
+    max-width:1080px; border-radius:12px; box-shadow:var(--sombra);
+    overflow-x:auto;
+  }
+  .tab-btn{
+    flex:1; white-space:nowrap; padding:10px 14px; border:none; background:transparent;
+    border-radius:8px; font-family:inherit; font-weight:700; font-size:13.5px;
+    color:var(--texto-suave); cursor:pointer; transition:.15s;
+  }
+  .tab-btn.active{background:var(--verde-bosque); color:var(--hueso);}
+  .tab-btn:not(.active):hover{background:var(--arena);}
+
+  main{max-width:1080px; margin:0 auto; padding:20px 16px 60px;}
+  .view{display:none;}
+  .view.active{display:block;}
+
+  .card{background:#fff;border-radius:16px;padding:20px;box-shadow:var(--sombra);margin-bottom:16px;}
+  .card h2{margin:0 0 14px;font-size:19px;color:var(--verde-bosque-d);}
+  .grid-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:18px;}
+  .stat{background:#fff;border-radius:16px;padding:18px;box-shadow:var(--sombra);border-left:4px solid var(--ocre);}
+  .stat .num{font-family:'Fraunces',serif;font-size:30px;font-weight:600;color:var(--verde-bosque-d);}
+  .stat .lbl{font-size:12.5px;color:var(--texto-suave);text-transform:uppercase;letter-spacing:0.04em;font-weight:700;margin-top:2px;}
+
+  .row-between{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px;}
+  input[type=text],input[type=tel],input[type=email],input[type=number],input[type=date],select,textarea{
+    padding:9px 11px;border-radius:9px;border:1.5px solid var(--borde);font-family:inherit;font-size:14px;
+    background:#fff;color:var(--texto);width:100%;
+  }
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--ocre);}
+  label.f{display:block;font-size:12px;font-weight:700;color:var(--verde-bosque-d);margin-bottom:4px;}
+  .form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:14px;}
+
+  table{width:100%;border-collapse:collapse;font-size:14px;}
+  th{text-align:left;padding:9px 8px;font-size:11.5px;text-transform:uppercase;letter-spacing:0.03em;color:var(--texto-suave);border-bottom:2px solid var(--arena);}
+  td{padding:10px 8px;border-bottom:1px solid var(--borde);vertical-align:middle;}
+  tr:last-child td{border-bottom:none;}
+  .badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11.5px;font-weight:700;}
+  .badge.activo{background:#E4EBDD;color:#3F4A34;}
+  .badge.pausado{background:#F3E4D0;color:#8A5A2B;}
+  .badge.pago{background:#E4EBDD;color:#3F4A34;}
+  .badge.debe{background:#F5DCD6;color:#8A3B2B;}
+  .icon-btn{background:none;border:none;cursor:pointer;color:var(--verde-apagado);font-size:15px;padding:4px 6px;border-radius:6px;}
+  .icon-btn:hover{background:var(--arena);}
+
+  .turno-card{border:1.5px solid var(--borde);border-radius:14px;padding:16px;margin-bottom:12px;}
+  .turno-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px;}
+  .turno-head .horario{font-family:'Fraunces',serif;font-size:18px;font-weight:600;color:var(--verde-bosque-d);}
+  .turno-tipo{font-size:12px;background:var(--arena);color:var(--verde-bosque-d);padding:3px 10px;border-radius:20px;font-weight:700;}
+  .cupo{font-size:12.5px;color:var(--texto-suave);}
+  .alumno-chip{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:var(--hueso);border-radius:9px;margin-bottom:6px;font-size:13.5px;}
+  .alumno-chip label{display:flex;align-items:center;gap:8px;cursor:pointer;}
+
+  .modal-bg{display:none;position:fixed;inset:0;background:rgba(43,46,34,0.5);z-index:50;align-items:center;justify-content:center;padding:16px;}
+  .modal-bg.active{display:flex;}
+  .modal{background:#fff;border-radius:16px;padding:24px;max-width:480px;width:100%;max-height:90vh;overflow-y:auto;}
+  .modal h3{margin:0 0 16px;color:var(--verde-bosque-d);}
+  .modal-actions{display:flex;gap:10px;margin-top:8px;}
+
+  .info-block{display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--borde);font-size:14px;}
+  .info-block:last-child{border-bottom:none;}
+  .info-block .k{color:var(--texto-suave);min-width:110px;font-weight:700;font-size:12.5px;text-transform:uppercase;letter-spacing:0.02em;}
+  .info-block .v{color:var(--texto);}
+  .copy-btn{background:var(--arena);border:none;border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;color:var(--verde-bosque-d);font-weight:700;margin-left:8px;}
+
+  .empty{text-align:center;color:var(--texto-suave);padding:30px 10px;font-size:14px;}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--verde-bosque-d);color:var(--hueso);
+    padding:12px 22px;border-radius:10px;font-size:14px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,0.25);
+    z-index:100;opacity:0;pointer-events:none;transition:opacity .25s, transform .25s;}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(-6px);}
+
+  @media(max-width:640px){
+    .tabs{overflow-x:auto;}
+    .tab-btn{flex:none;}
+  }
+</style>
+</head>
+<body>
+
+<!-- ============ LOGIN ============ -->
+<div id="login-screen">
+  <div class="login-card">
+    <div class="wheel-wrap">
+      <svg viewBox="0 0 104 104">
+        <g class="wheel-spin">
+          <ellipse cx="52" cy="86" rx="30" ry="6" fill="var(--verde-apagado)" opacity="0.25"/>
+        </g>
+        <path class="vase-path" d="M40,88 C36,88 34,84 36,78 C39,70 40,64 38,56 C36,46 34,40 40,32 C43,28 43,22 40,18 C38,15 40,12 44,12 L60,12 C64,12 66,15 64,18 C61,22 61,28 64,32 C70,40 68,46 66,56 C64,64 65,70 68,78 C70,84 68,88 64,88 Z"/>
+      </svg>
+    </div>
+    <h1>Vital Cerámica</h1>
+    <p class="sub">Panel de administración</p>
+    <div class="field">
+      <label>Email</label>
+      <input type="email" id="login-email" placeholder="vitalceramic.05@gmail.com" autocomplete="username">
+    </div>
+    <div class="field">
+      <label>Contraseña</label>
+      <input type="password" id="login-pass" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <button class="btn ocre" onclick="hacerLogin()">Ingresar</button>
+    <div class="error-msg" id="login-error"></div>
+  </div>
+</div>
+
+<!-- ============ APP ============ -->
+<div id="app-screen">
+  <div class="topbar">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 104 104"><path d="M40,88 C36,88 34,84 36,78 C39,70 40,64 38,56 C36,46 34,40 40,32 C43,28 43,22 40,18 C38,15 40,12 44,12 L60,12 C64,12 66,15 64,18 C61,22 61,28 64,32 C70,40 68,46 66,56 C64,64 65,70 68,78 C70,84 68,88 64,88 Z" fill="none" stroke="var(--ocre)" stroke-width="4"/></svg>
+      <span>Vital Cerámica</span>
+    </div>
+    <button class="logout" onclick="hacerLogout()">Salir</button>
+  </div>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-view="dashboard" onclick="cambiarVista('dashboard')">Inicio</button>
+    <button class="tab-btn" data-view="alumnos" onclick="cambiarVista('alumnos')">Alumnos</button>
+    <button class="tab-btn" data-view="clases" onclick="cambiarVista('clases')">Clases</button>
+    <button class="tab-btn" data-view="pagos" onclick="cambiarVista('pagos')">Pagos</button>
+    <button class="tab-btn" data-view="negocio" onclick="cambiarVista('negocio')">Mi negocio</button>
+  </div>
+
+  <main>
+    <!-- ---------- DASHBOARD ---------- -->
+    <div class="view active" id="view-dashboard">
+      <div class="grid-stats">
+        <div class="stat"><div class="num" id="stat-alumnos">0</div><div class="lbl">Alumnos activos</div></div>
+        <div class="stat"><div class="num" id="stat-ingresos">$0</div><div class="lbl">Cobrado este mes</div></div>
+        <div class="stat"><div class="num" id="stat-pendientes">0</div><div class="lbl">Cuotas pendientes</div></div>
+        <div class="stat"><div class="num" id="stat-hoy">0</div><div class="lbl">Clases hoy</div></div>
+      </div>
+      <div class="card">
+        <h2>Alumnos con cuota pendiente este mes</h2>
+        <div id="pendientes-list"><div class="empty">Cargando...</div></div>
+      </div>
+    </div>
+
+    <!-- ---------- ALUMNOS ---------- -->
+    <div class="view" id="view-alumnos">
+      <div class="card">
+        <div class="row-between">
+          <h2 style="margin:0;">Alumnos</h2>
+          <button class="btn ocre btn-sm" onclick="abrirModalAlumno()">+ Nuevo alumno</button>
+        </div>
+        <div style="overflow-x:auto;">
+        <table>
+          <thead><tr><th>Nombre</th><th>Contacto</th><th>Turno/s</th><th>Estado</th><th></th></tr></thead>
+          <tbody id="tabla-alumnos"><tr><td colspan="5" class="empty">Cargando...</td></tr></tbody>
+        </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---------- CLASES ---------- -->
+    <div class="view" id="view-clases">
+      <div class="card">
+        <div class="row-between">
+          <h2 style="margin:0;">Turnos y asistencia</h2>
+          <input type="date" id="fecha-asistencia" style="max-width:170px;" onchange="renderClases()">
+        </div>
+        <div id="turnos-container"></div>
+      </div>
+    </div>
+
+    <!-- ---------- PAGOS ---------- -->
+    <div class="view" id="view-pagos">
+      <div class="card">
+        <div class="row-between">
+          <h2 style="margin:0;">Pagos</h2>
+          <button class="btn ocre btn-sm" onclick="abrirModalPago()">+ Registrar pago</button>
+        </div>
+        <div style="overflow-x:auto;">
+        <table>
+          <thead><tr><th>Alumno</th><th>Mes</th><th>Monto</th><th>Medio</th><th>Fecha</th></tr></thead>
+          <tbody id="tabla-pagos"><tr><td colspan="5" class="empty">Cargando...</td></tr></tbody>
+        </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---------- NEGOCIO ---------- -->
+    <div class="view" id="view-negocio">
+      <div class="card">
+        <h2>Datos de contacto</h2>
+        <div class="info-block"><div class="k">Dirección</div><div class="v">Avenida Los Sauces 119</div></div>
+        <div class="info-block"><div class="k">Teléfono</div><div class="v">2604825919</div></div>
+        <div class="info-block"><div class="k">Email</div><div class="v">vitalceramic.05@gmail.com</div></div>
+        <div class="info-block"><div class="k">Instagram</div><div class="v">@vital.ceramica</div></div>
+        <div class="info-block"><div class="k">Facebook</div><div class="v">vital.cerámica</div></div>
+      </div>
+      <div class="card">
+        <h2>Clases y planes</h2>
+        <div class="info-block"><div class="k">Modalidades</div><div class="v">Clases de cerámica para adultos y niños · Modelado manual · Técnicas de construcción con planchas y pellizco</div></div>
+        <div class="info-block"><div class="k">Cuota mensual</div><div class="v">$45.000 — incluye materiales, herramientas, esmaltes y horneadas</div></div>
+        <div class="info-block"><div class="k">Horarios</div><div class="v">8 a 10 · 10 a 12 · 16:30 a 18:30 · 18:30 a 20:30</div></div>
+      </div>
+      <div class="card">
+        <h2>Datos bancarios <span style="font-size:12px;color:var(--texto-suave);font-weight:400;">(para compartir con alumnos)</span></h2>
+        <div class="info-block"><div class="k">Titular</div><div class="v">Brenda Macarena Montana</div></div>
+        <div class="info-block"><div class="k">CUIL</div><div class="v">27411131020</div></div>
+        <div class="info-block"><div class="k">CBU</div><div class="v">4530000800019975251795 <button class="copy-btn" onclick="copiarTexto('4530000800019975251795')">copiar</button></div></div>
+        <div class="info-block"><div class="k">Alias</div><div class="v">vital.nx <button class="copy-btn" onclick="copiarTexto('vital.nx')">copiar</button></div></div>
+        <div class="info-block"><div class="k">Cuenta</div><div class="v">Caja de ahorro en pesos · 1997525179</div></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- ---------- MODAL ALUMNO ---------- -->
+<div class="modal-bg" id="modal-alumno">
+  <div class="modal">
+    <h3 id="modal-alumno-title">Nuevo alumno</h3>
+    <input type="hidden" id="alumno-id">
+    <div class="form-grid">
+      <div>
+        <label class="f">Nombre completo</label>
+        <input type="text" id="alumno-nombre">
+      </div>
+      <div>
+        <label class="f">Teléfono</label>
+        <input type="tel" id="alumno-tel">
+      </div>
+    </div>
+    <div class="form-grid">
+      <div>
+        <label class="f">Email</label>
+        <input type="email" id="alumno-email">
+      </div>
+      <div>
+        <label class="f">Fecha de inicio</label>
+        <input type="date" id="alumno-fecha">
+      </div>
+    </div>
+    <div class="form-grid">
+      <div>
+        <label class="f">Tipo</label>
+        <select id="alumno-tipo">
+          <option value="adultos">Adultos</option>
+          <option value="ninos">Niños</option>
+        </select>
+      </div>
+      <div>
+        <label class="f">Estado</label>
+        <select id="alumno-estado">
+          <option value="activo">Activo</option>
+          <option value="pausado">Pausado</option>
+        </select>
+      </div>
+    </div>
+    <label class="f">Turno/s</label>
+    <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px;" id="alumno-turnos-check"></div>
+    <label class="f">Notas</label>
+    <textarea id="alumno-notas" rows="2" style="margin-bottom:6px;"></textarea>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="cerrarModal('modal-alumno')">Cancelar</button>
+      <button class="btn ocre" onclick="guardarAlumno()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ---------- MODAL PAGO ---------- -->
+<div class="modal-bg" id="modal-pago">
+  <div class="modal">
+    <h3>Registrar pago</h3>
+    <label class="f">Alumno</label>
+    <select id="pago-alumno" style="margin-bottom:12px;"></select>
+    <div class="form-grid">
+      <div>
+        <label class="f">Mes</label>
+        <input type="text" id="pago-mes" placeholder="2026-08">
+      </div>
+      <div>
+        <label class="f">Monto</label>
+        <input type="number" id="pago-monto" placeholder="45000">
+      </div>
+    </div>
+    <label class="f">Medio de pago</label>
+    <select id="pago-medio" style="margin-bottom:14px;">
+      <option value="efectivo">Efectivo</option>
+      <option value="transferencia">Transferencia</option>
+      <option value="naranjax">Naranja X</option>
+    </select>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="cerrarModal('modal-pago')">Cancelar</button>
+      <button class="btn ocre" onclick="guardarPago()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ======================================================
+   CONFIG FIREBASE — proyecto compartido appsur-2ffb3
+   Reemplazá con el firebaseConfig real del proyecto.
+====================================================== */
+const firebaseConfig = {
+  apiKey: "TU_API_KEY",
+  authDomain: "appsur-2ffb3.firebaseapp.com",
+  projectId: "appsur-2ffb3",
+  storageBucket: "appsur-2ffb3.appspot.com",
+  messagingSenderId: "TU_SENDER_ID",
+  appId: "TU_APP_ID"
+};
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+
+let UID = null;
+let alumnosCache = [];
+let pagosCache = [];
+
+const TURNOS = [
+  { id: "t1", horario: "8:00 a 10:00", tipo: "adultos" },
+  { id: "t2", horario: "10:00 a 12:00", tipo: "adultos" },
+  { id: "t3", horario: "16:30 a 18:30", tipo: "ninos" },
+  { id: "t4", horario: "18:30 a 20:30", tipo: "adultos" }
+];
+
+/* ---------- AUTH ---------- */
+function hacerLogin(){
+  const email = document.getElementById('login-email').value.trim();
+  const pass = document.getElementById('login-pass').value;
+  const errEl = document.getElementById('login-error');
+  errEl.textContent = '';
+  if(!email || !pass){ errEl.textContent = 'Completá email y contraseña.'; return; }
+  auth.signInWithEmailAndPassword(email, pass).catch(err => {
+    errEl.textContent = 'No pudimos ingresar: revisá el email y la contraseña.';
+    console.error(err);
+  });
+}
+function hacerLogout(){ auth.signOut(); }
+
+auth.onAuthStateChanged(user => {
+  if(user){
+    UID = user.uid;
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('app-screen').style.display = 'block';
+    cargarTodo();
+  } else {
+    UID = null;
+    document.getElementById('app-screen').style.display = 'none';
+    document.getElementById('login-screen').style.display = 'flex';
+  }
+});
+
+/* ---------- NAV ---------- */
+function cambiarVista(view){
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.view === view));
+  document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + view));
+  if(view === 'clases') renderClases();
+}
+
+/* ---------- TOAST ---------- */
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(()=> t.classList.remove('show'), 2200);
+}
+function copiarTexto(txt){
+  navigator.clipboard.writeText(txt).then(()=> toast('Copiado: ' + txt));
+}
+
+/* ---------- CARGA DE DATOS ---------- */
+function cargarTodo(){
+  document.getElementById('fecha-asistencia').value = new Date().toISOString().slice(0,10);
+
+  db.collection('alumnos_ceramica').where('uid','==',UID)
+    .onSnapshot(snap => {
+      alumnosCache = [];
+      snap.forEach(doc => alumnosCache.push({ id: doc.id, ...doc.data() }));
+      alumnosCache.sort((a,b) => (a.nombre||'').localeCompare(b.nombre||''));
+      renderAlumnos();
+      renderDashboard();
+      renderClases();
+      poblarSelectPago();
+    }, err => console.error(err));
+
+  db.collection('pagos_ceramica').where('uid','==',UID)
+    .onSnapshot(snap => {
+      pagosCache = [];
+      snap.forEach(doc => pagosCache.push({ id: doc.id, ...doc.data() }));
+      pagosCache.sort((a,b) => (b.fecha||'').localeCompare(a.fecha||''));
+      renderPagos();
+      renderDashboard();
+    }, err => console.error(err));
+}
+
+/* ---------- DASHBOARD ---------- */
+function renderDashboard(){
+  const activos = alumnosCache.filter(a => a.estado === 'activo');
+  document.getElementById('stat-alumnos').textContent = activos.length;
+
+  const mesActual = new Date().toISOString().slice(0,7);
+  const cobradoMes = pagosCache.filter(p => p.mes === mesActual)
+    .reduce((sum,p) => sum + (Number(p.monto)||0), 0);
+  document.getElementById('stat-ingresos').textContent = '$' + cobradoMes.toLocaleString('es-AR');
+
+  const pagaronMes = new Set(pagosCache.filter(p => p.mes === mesActual).map(p => p.alumnoId));
+  const pendientes = activos.filter(a => !pagaronMes.has(a.id));
+  document.getElementById('stat-pendientes').textContent = pendientes.length;
+
+  const hoy = new Date().getDay(); // 0=dom
+  document.getElementById('stat-hoy').textContent = (hoy === 0) ? 0 : TURNOS.length;
+
+  const list = document.getElementById('pendientes-list');
+  if(pendientes.length === 0){
+    list.innerHTML = '<div class="empty">Todos al día 🎉</div>';
+  } else {
+    list.innerHTML = pendientes.map(a => `
+      <div class="alumno-chip">
+        <span>${a.nombre}</span>
+        <span class="badge debe">Debe ${mesActual}</span>
+      </div>`).join('');
+  }
+}
+
+/* ---------- ALUMNOS ---------- */
+function renderAlumnos(){
+  const tbody = document.getElementById('tabla-alumnos');
+  if(alumnosCache.length === 0){
+    tbody.innerHTML = '<tr><td colspan="5" class="empty">Todavía no cargaste alumnos.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = alumnosCache.map(a => {
+    const turnosNom = (a.turnos||[]).map(tid => TURNOS.find(t=>t.id===tid)?.horario).filter(Boolean).join(' / ') || '—';
+    return `
+    <tr>
+      <td><strong>${a.nombre}</strong>${a.tipo==='ninos' ? ' <span style="font-size:11px;color:var(--texto-suave);">(niño/a)</span>' : ''}</td>
+      <td>${a.telefono||''}<br><span style="color:var(--texto-suave);font-size:12.5px;">${a.email||''}</span></td>
+      <td>${turnosNom}</td>
+      <td><span class="badge ${a.estado}">${a.estado==='activo'?'Activo':'Pausado'}</span></td>
+      <td style="text-align:right;">
+        <button class="icon-btn" onclick="abrirModalAlumno('${a.id}')" title="Editar">✎</button>
+        <button class="icon-btn" onclick="borrarAlumno('${a.id}')" title="Eliminar">🗑</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function abrirModalAlumno(id){
+  document.getElementById('modal-alumno-title').textContent = id ? 'Editar alumno' : 'Nuevo alumno';
+  document.getElementById('alumno-id').value = id || '';
+  const a = id ? alumnosCache.find(x => x.id === id) : null;
+  document.getElementById('alumno-nombre').value = a?.nombre || '';
+  document.getElementById('alumno-tel').value = a?.telefono || '';
+  document.getElementById('alumno-email').value = a?.email || '';
+  document.getElementById('alumno-fecha').value = a?.fechaInicio || new Date().toISOString().slice(0,10);
+  document.getElementById('alumno-tipo').value = a?.tipo || 'adultos';
+  document.getElementById('alumno-estado').value = a?.estado || 'activo';
+  document.getElementById('alumno-notas').value = a?.notas || '';
+
+  const cont = document.getElementById('alumno-turnos-check');
+  const turnosSel = a?.turnos || [];
+  cont.innerHTML = TURNOS.map(t => `
+    <label class="alumno-chip" style="cursor:pointer;">
+      <span><input type="checkbox" value="${t.id}" ${turnosSel.includes(t.id)?'checked':''} style="margin-right:8px;"> ${t.horario}</span>
+      <span style="font-size:11px;color:var(--texto-suave);">${t.tipo==='ninos'?'Niños':'Adultos'}</span>
+    </label>`).join('');
+
+  document.getElementById('modal-alumno').classList.add('active');
+}
+
+function guardarAlumno(){
+  const nombre = document.getElementById('alumno-nombre').value.trim();
+  if(!nombre){ toast('Falta el nombre'); return; }
+  const id = document.getElementById('alumno-id').value;
+  const turnos = Array.from(document.querySelectorAll('#alumno-turnos-check input:checked')).map(i => i.value);
+
+  const data = {
+    nombre,
+    telefono: document.getElementById('alumno-tel').value.trim(),
+    email: document.getElementById('alumno-email').value.trim(),
+    fechaInicio: document.getElementById('alumno-fecha').value,
+    tipo: document.getElementById('alumno-tipo').value,
+    estado: document.getElementById('alumno-estado').value,
+    notas: document.getElementById('alumno-notas').value.trim(),
+    turnos,
+    uid: UID
+  };
+
+  const p = id ? db.collection('alumnos_ceramica').doc(id).update(data)
+               : db.collection('alumnos_ceramica').add(data);
+  p.then(()=>{ cerrarModal('modal-alumno'); toast('Alumno guardado'); })
+   .catch(err => { console.error(err); toast('Error al guardar'); });
+}
+
+function borrarAlumno(id){
+  if(!confirm('¿Eliminar este alumno? No se puede deshacer.')) return;
+  db.collection('alumnos_ceramica').doc(id).delete()
+    .then(()=> toast('Alumno eliminado'))
+    .catch(err => console.error(err));
+}
+
+/* ---------- CLASES / ASISTENCIA ---------- */
+function renderClases(){
+  const fecha = document.getElementById('fecha-asistencia').value || new Date().toISOString().slice(0,10);
+  const cont = document.getElementById('turnos-container');
+  cont.innerHTML = TURNOS.map(t => {
+    const alumnosTurno = alumnosCache.filter(a => (a.turnos||[]).includes(t.id) && a.estado==='activo');
+    const filas = alumnosTurno.length
+      ? alumnosTurno.map(a => `
+        <div class="alumno-chip">
+          <label>
+            <input type="checkbox" data-alumno="${a.id}" data-turno="${t.id}" data-fecha="${fecha}" onchange="marcarAsistencia(this)">
+            ${a.nombre}
+          </label>
+        </div>`).join('')
+      : '<div class="empty" style="padding:14px 0;">Sin alumnos anotados en este turno.</div>';
+    return `
+      <div class="turno-card">
+        <div class="turno-head">
+          <span class="horario">${t.horario}</span>
+          <span class="turno-tipo">${t.tipo==='ninos'?'Niños':'Adultos'}</span>
+          <span class="cupo">${alumnosTurno.length} anotado/s</span>
+        </div>
+        ${filas}
+      </div>`;
+  }).join('');
+
+  // cargar asistencias ya marcadas para esa fecha
+  db.collection('asistencias_ceramica').where('uid','==',UID).where('fecha','==',fecha).get()
+    .then(snap => {
+      snap.forEach(doc => {
+        const d = doc.data();
+        const chk = document.querySelector(`input[data-alumno="${d.alumnoId}"][data-turno="${d.turnoId}"][data-fecha="${fecha}"]`);
+        if(chk) chk.checked = !!d.presente;
+      });
+    });
+}
+
+function marcarAsistencia(chk){
+  const alumnoId = chk.dataset.alumno;
+  const turnoId = chk.dataset.turno;
+  const fecha = chk.dataset.fecha;
+  const docId = `${alumnoId}_${turnoId}_${fecha}`;
+  db.collection('asistencias_ceramica').doc(docId).set({
+    alumnoId, turnoId, fecha, presente: chk.checked, uid: UID
+  }).then(()=> toast(chk.checked ? 'Presente' : 'Marcado ausente'))
+    .catch(err => console.error(err));
+}
+
+/* ---------- PAGOS ---------- */
+function poblarSelectPago(){
+  const sel = document.getElementById('pago-alumno');
+  sel.innerHTML = alumnosCache.map(a => `<option value="${a.id}">${a.nombre}</option>`).join('');
+}
+
+function renderPagos(){
+  const tbody = document.getElementById('tabla-pagos');
+  if(pagosCache.length === 0){
+    tbody.innerHTML = '<tr><td colspan="5" class="empty">Todavía no hay pagos registrados.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = pagosCache.map(p => `
+    <tr>
+      <td>${p.alumnoNombre||''}</td>
+      <td>${p.mes||''}</td>
+      <td>$${Number(p.monto||0).toLocaleString('es-AR')}</td>
+      <td>${p.medio||''}</td>
+      <td>${p.fecha||''}</td>
+    </tr>`).join('');
+}
+
+function abrirModalPago(){
+  document.getElementById('pago-mes').value = new Date().toISOString().slice(0,7);
+  document.getElementById('pago-monto').value = 45000;
+  document.getElementById('modal-pago').classList.add('active');
+}
+
+function guardarPago(){
+  const alumnoId = document.getElementById('pago-alumno').value;
+  const alumno = alumnosCache.find(a => a.id === alumnoId);
+  if(!alumno){ toast('Elegí un alumno'); return; }
+  const data = {
+    alumnoId,
+    alumnoNombre: alumno.nombre,
+    mes: document.getElementById('pago-mes').value.trim(),
+    monto: Number(document.getElementById('pago-monto').value) || 0,
+    medio: document.getElementById('pago-medio').value,
+    fecha: new Date().toISOString().slice(0,10),
+    uid: UID
+  };
+  db.collection('pagos_ceramica').add(data)
+    .then(()=>{ cerrarModal('modal-pago'); toast('Pago registrado'); })
+    .catch(err => { console.error(err); toast('Error al guardar'); });
+}
+
+/* ---------- MODALES ---------- */
+function cerrarModal(id){ document.getElementById(id).classList.remove('active'); }
+document.querySelectorAll('.modal-bg').forEach(m => {
+  m.addEventListener('click', e => { if(e.target === m) m.classList.remove('active'); });
+});
+</script>
+</body>
+</html>
