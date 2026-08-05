@@ -276,9 +276,13 @@
 
     <!-- ---------- CLASES ---------- -->
     <div class="view" id="view-clases">
+      <div class="card" id="card-recuperaciones" style="display:none;">
+        <h2>Recuperaciones pendientes</h2>
+        <div id="recuperaciones-list"></div>
+      </div>
       <div class="card">
         <div class="row-between">
-          <h2 style="margin:0;">Turnos y asistencia</h2>
+          <h2 style="margin:0;" id="clases-titulo">Turnos y asistencia</h2>
           <input type="date" id="fecha-asistencia" style="max-width:170px;" onchange="renderClases()">
         </div>
         <div id="turnos-container"></div>
@@ -370,8 +374,13 @@
         </select>
       </div>
     </div>
-    <label class="f">Turno/s</label>
-    <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px;" id="alumno-turnos-check"></div>
+    <label class="f">Día y horario fijo (podés tildar más de uno)</label>
+    <div style="overflow-x:auto;margin-bottom:14px;">
+      <table id="alumno-grilla" style="min-width:520px;">
+        <thead><tr><th>Turno</th><th>Lun</th><th>Mar</th><th>Mié</th><th>Jue</th><th>Vie</th><th>Sáb</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
     <label class="f">Notas</label>
     <textarea id="alumno-notas" rows="2" style="margin-bottom:6px;"></textarea>
     <div class="modal-actions">
@@ -410,6 +419,28 @@
   </div>
 </div>
 
+<!-- ---------- MODAL RECUPERACIÓN ---------- -->
+<div class="modal-bg" id="modal-recupera">
+  <div class="modal">
+    <h3>Programar recuperación</h3>
+    <p style="font-size:13.5px;color:var(--texto-suave);margin-top:-8px;" id="recupera-info"></p>
+    <div class="form-grid">
+      <div>
+        <label class="f">Nueva fecha</label>
+        <input type="date" id="recupera-fecha">
+      </div>
+      <div>
+        <label class="f">Turno</label>
+        <select id="recupera-turno"></select>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="cerrarModal('modal-recupera')">Cancelar</button>
+      <button class="btn ocre" onclick="confirmarRecuperacion()">Programar</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -432,13 +463,30 @@ const db = firebase.firestore();
 let UID = null;
 let alumnosCache = [];
 let pagosCache = [];
+let recuperacionesCache = [];
 
 const TURNOS = [
-  { id: "t1", horario: "8:00 a 10:00", tipo: "adultos" },
-  { id: "t2", horario: "10:00 a 12:00", tipo: "adultos" },
-  { id: "t3", horario: "16:30 a 18:30", tipo: "ninos" },
-  { id: "t4", horario: "18:30 a 20:30", tipo: "adultos" }
+  { id: "t1", horario: "8:00 a 10:00" },
+  { id: "t2", horario: "10:00 a 12:00" },
+  { id: "t3", horario: "16:30 a 18:30" },
+  { id: "t4", horario: "18:30 a 20:30" }
 ];
+const DIAS = [
+  { id: "lunes", label: "Lunes", corto: "Lun" },
+  { id: "martes", label: "Martes", corto: "Mar" },
+  { id: "miercoles", label: "Miércoles", corto: "Mié" },
+  { id: "jueves", label: "Jueves", corto: "Jue" },
+  { id: "viernes", label: "Viernes", corto: "Vie" },
+  { id: "sabado", label: "Sábado", corto: "Sáb" }
+];
+// Cupo máximo por turno — ajustá este número si cambia el tamaño del taller
+const CUPO_MAX = 8;
+// Mapea el día de la semana de una fecha (JS: 0=domingo) al id de DIAS
+function diaDeFecha(fechaStr){
+  const dow = new Date(fechaStr + 'T00:00:00').getDay();
+  const map = { 1:'lunes', 2:'martes', 3:'miercoles', 4:'jueves', 5:'viernes', 6:'sabado' };
+  return map[dow] || null;
+}
 
 /* ---------- AUTH ---------- */
 function hacerLogin(){
@@ -508,6 +556,14 @@ function cargarTodo(){
       renderPagos();
       renderDashboard();
     }, err => console.error(err));
+
+  db.collection('recuperaciones_ceramica').where('uid','==',UID)
+    .onSnapshot(snap => {
+      recuperacionesCache = [];
+      snap.forEach(doc => recuperacionesCache.push({ id: doc.id, ...doc.data() }));
+      recuperacionesCache.sort((a,b) => (a.fechaRecupera||'').localeCompare(b.fechaRecupera||''));
+      renderClases();
+    }, err => console.error(err));
 }
 
 /* ---------- DASHBOARD ---------- */
@@ -524,8 +580,9 @@ function renderDashboard(){
   const pendientes = activos.filter(a => !pagaronMes.has(a.id));
   document.getElementById('stat-pendientes').textContent = pendientes.length;
 
-  const hoy = new Date().getDay(); // 0=dom
-  document.getElementById('stat-hoy').textContent = (hoy === 0) ? 0 : TURNOS.length;
+  const diaHoy = diaDeFecha(new Date().toISOString().slice(0,10));
+  const clasesHoy = diaHoy ? new Set(alumnosCache.filter(a=>a.estado==='activo').flatMap(a=>a.horarios||[]).filter(h=>h.dia===diaHoy).map(h=>h.turnoId)).size : 0;
+  document.getElementById('stat-hoy').textContent = clasesHoy;
 
   const list = document.getElementById('pendientes-list');
   if(pendientes.length === 0){
@@ -547,7 +604,11 @@ function renderAlumnos(){
     return;
   }
   tbody.innerHTML = alumnosCache.map(a => {
-    const turnosNom = (a.turnos||[]).map(tid => TURNOS.find(t=>t.id===tid)?.horario).filter(Boolean).join(' / ') || '—';
+    const turnosNom = (a.horarios||[]).map(h => {
+      const dia = DIAS.find(d=>d.id===h.dia);
+      const t = TURNOS.find(t=>t.id===h.turnoId);
+      return (dia && t) ? `${dia.corto} ${t.horario}` : null;
+    }).filter(Boolean).join(' · ') || '—';
     return `
     <tr>
       <td><strong>${a.nombre}</strong>${a.tipo==='ninos' ? ' <span style="font-size:11px;color:var(--texto-suave);">(niño/a)</span>' : ''}</td>
@@ -574,13 +635,14 @@ function abrirModalAlumno(id){
   document.getElementById('alumno-estado').value = a?.estado || 'activo';
   document.getElementById('alumno-notas').value = a?.notas || '';
 
-  const cont = document.getElementById('alumno-turnos-check');
-  const turnosSel = a?.turnos || [];
-  cont.innerHTML = TURNOS.map(t => `
-    <label class="alumno-chip" style="cursor:pointer;">
-      <span><input type="checkbox" value="${t.id}" ${turnosSel.includes(t.id)?'checked':''} style="margin-right:8px;"> ${t.horario}</span>
-      <span style="font-size:11px;color:var(--texto-suave);">${t.tipo==='ninos'?'Niños':'Adultos'}</span>
-    </label>`).join('');
+  const tbody = document.querySelector('#alumno-grilla tbody');
+  const horariosSel = a?.horarios || [];
+  const tieneSlot = (turnoId, diaId) => horariosSel.some(h => h.turnoId===turnoId && h.dia===diaId);
+  tbody.innerHTML = TURNOS.map(t => `
+    <tr>
+      <td style="white-space:nowrap;font-weight:700;font-size:13px;">${t.horario}</td>
+      ${DIAS.map(d => `<td style="text-align:center;"><input type="checkbox" data-turno="${t.id}" data-dia="${d.id}" ${tieneSlot(t.id,d.id)?'checked':''}></td>`).join('')}
+    </tr>`).join('');
 
   document.getElementById('modal-alumno').classList.add('active');
 }
@@ -589,7 +651,8 @@ function guardarAlumno(){
   const nombre = document.getElementById('alumno-nombre').value.trim();
   if(!nombre){ toast('Falta el nombre'); return; }
   const id = document.getElementById('alumno-id').value;
-  const turnos = Array.from(document.querySelectorAll('#alumno-turnos-check input:checked')).map(i => i.value);
+  const horarios = Array.from(document.querySelectorAll('#alumno-grilla input:checked'))
+    .map(i => ({ turnoId: i.dataset.turno, dia: i.dataset.dia }));
 
   const data = {
     nombre,
@@ -599,7 +662,7 @@ function guardarAlumno(){
     tipo: document.getElementById('alumno-tipo').value,
     estado: document.getElementById('alumno-estado').value,
     notas: document.getElementById('alumno-notas').value.trim(),
-    turnos,
+    horarios,
     uid: UID
   };
 
@@ -619,49 +682,139 @@ function borrarAlumno(id){
 /* ---------- CLASES / ASISTENCIA ---------- */
 function renderClases(){
   const fecha = document.getElementById('fecha-asistencia').value || new Date().toISOString().slice(0,10);
-  const cont = document.getElementById('turnos-container');
-  cont.innerHTML = TURNOS.map(t => {
-    const alumnosTurno = alumnosCache.filter(a => (a.turnos||[]).includes(t.id) && a.estado==='activo');
-    const filas = alumnosTurno.length
-      ? alumnosTurno.map(a => `
-        <div class="alumno-chip">
-          <label>
-            <input type="checkbox" data-alumno="${a.id}" data-turno="${t.id}" data-fecha="${fecha}" onchange="marcarAsistencia(this)">
-            ${a.nombre}
-          </label>
-        </div>`).join('')
-      : '<div class="empty" style="padding:14px 0;">Sin alumnos anotados en este turno.</div>';
-    return `
-      <div class="turno-card">
-        <div class="turno-head">
-          <span class="horario">${t.horario}</span>
-          <span class="turno-tipo">${t.tipo==='ninos'?'Niños':'Adultos'}</span>
-          <span class="cupo">${alumnosTurno.length} anotado/s</span>
-        </div>
-        ${filas}
-      </div>`;
-  }).join('');
+  const diaId = diaDeFecha(fecha);
+  const diaLabel = DIAS.find(d=>d.id===diaId)?.label;
+  document.getElementById('clases-titulo').textContent = diaLabel ? `Turnos del ${diaLabel} ${fecha.split('-').reverse().join('/')}` : 'El taller no abre los domingos';
 
-  // cargar asistencias ya marcadas para esa fecha
-  db.collection('asistencias_ceramica').where('uid','==',UID).where('fecha','==',fecha).get()
-    .then(snap => {
-      snap.forEach(doc => {
-        const d = doc.data();
-        const chk = document.querySelector(`input[data-alumno="${d.alumnoId}"][data-turno="${d.turnoId}"][data-fecha="${fecha}"]`);
-        if(chk) chk.checked = !!d.presente;
+  const cont = document.getElementById('turnos-container');
+
+  if(!diaId){
+    cont.innerHTML = '<div class="empty">No hay turnos programados para este día.</div>';
+  } else {
+    cont.innerHTML = TURNOS.map(t => {
+      const regulares = alumnosCache.filter(a => a.estado==='activo' && (a.horarios||[]).some(h=>h.turnoId===t.id && h.dia===diaId));
+      const recuperantes = recuperacionesCache.filter(r => r.turnoRecupera===t.id && r.fechaRecupera===fecha)
+        .map(r => ({ id: r.alumnoId, nombre: r.alumnoNombre, recuperaId: r.id }));
+      const total = regulares.length + recuperantes.length;
+      const libres = CUPO_MAX - total;
+
+      const filaRegular = a => `
+        <div class="alumno-chip" style="align-items:center;">
+          <span>${a.nombre}</span>
+          <span class="estado-btns" data-alumno="${a.id}" data-turno="${t.id}" data-fecha="${fecha}">
+            <button class="icon-btn btn-estado" data-estado="presente" onclick="marcarEstado(this)" title="Presente">✅</button>
+            <button class="icon-btn btn-estado" data-estado="ausente" onclick="marcarEstado(this)" title="Ausente">❌</button>
+            <button class="icon-btn btn-estado" data-estado="recupera" onclick="marcarEstado(this)" title="Necesita recuperar">🔁</button>
+          </span>
+        </div>`;
+
+      const filaRecupera = a => `
+        <div class="alumno-chip" style="align-items:center;background:#F3E4D0;">
+          <span>${a.nombre} <span style="font-size:11px;color:var(--texto-suave);">(recupera)</span></span>
+          <span class="estado-btns" data-alumno="${a.id}" data-turno="${t.id}" data-fecha="${fecha}" data-recupera-id="${a.recuperaId}">
+            <button class="icon-btn btn-estado" data-estado="presente" onclick="marcarEstado(this)" title="Presente">✅</button>
+            <button class="icon-btn btn-estado" data-estado="ausente" onclick="marcarEstado(this)" title="Ausente">❌</button>
+          </span>
+        </div>`;
+
+      const filas = (regulares.map(filaRegular).join('') + recuperantes.map(filaRecupera).join(''))
+        || '<div class="empty" style="padding:14px 0;">Sin alumnas anotadas en este turno.</div>';
+
+      return `
+        <div class="turno-card">
+          <div class="turno-head">
+            <span class="horario">${t.horario}</span>
+            <span class="cupo" style="${libres<=0?'color:var(--rojo);font-weight:700;':''}">${total}/${CUPO_MAX} — ${libres>0?libres+' lugares libres':'turno lleno'}</span>
+          </div>
+          ${filas}
+        </div>`;
+    }).join('');
+  }
+
+  // recuperaciones pendientes (futuras o de hoy)
+  const hoy = new Date().toISOString().slice(0,10);
+  const pendientes = recuperacionesCache.filter(r => r.fechaRecupera >= hoy);
+  const card = document.getElementById('card-recuperaciones');
+  if(pendientes.length){
+    card.style.display = 'block';
+    document.getElementById('recuperaciones-list').innerHTML = pendientes.map(r => {
+      const t = TURNOS.find(t=>t.id===r.turnoRecupera);
+      return `<div class="alumno-chip">
+        <span>${r.alumnoNombre} — recupera clase del ${r.fechaOriginal.split('-').reverse().join('/')}</span>
+        <span class="badge pago">${r.fechaRecupera.split('-').reverse().join('/')} · ${t?.horario||''}</span>
+      </div>`;
+    }).join('');
+  } else {
+    card.style.display = 'none';
+  }
+
+  // pintar el estado ya marcado ese día (si lo hay)
+  if(diaId){
+    db.collection('asistencias_ceramica').where('uid','==',UID).where('fecha','==',fecha).get()
+      .then(snap => {
+        snap.forEach(doc => {
+          const d = doc.data();
+          const wrap = document.querySelector(`.estado-btns[data-alumno="${d.alumnoId}"][data-turno="${d.turnoId}"][data-fecha="${fecha}"]`);
+          if(wrap){
+            wrap.querySelectorAll('.btn-estado').forEach(b => {
+              b.style.opacity = (b.dataset.estado === d.estado) ? '1' : '0.35';
+            });
+          }
+        });
       });
-    });
+  }
 }
 
-function marcarAsistencia(chk){
-  const alumnoId = chk.dataset.alumno;
-  const turnoId = chk.dataset.turno;
-  const fecha = chk.dataset.fecha;
+function marcarEstado(btn){
+  const wrap = btn.closest('.estado-btns');
+  const alumnoId = wrap.dataset.alumno;
+  const turnoId = wrap.dataset.turno;
+  const fecha = wrap.dataset.fecha;
+  const estado = btn.dataset.estado;
+  const alumno = alumnosCache.find(a=>a.id===alumnoId) || recuperacionesCache.find(r=>r.alumnoId===alumnoId);
+
+  if(estado === 'recupera'){
+    document.getElementById('modal-recupera').dataset.alumno = alumnoId;
+    document.getElementById('modal-recupera').dataset.turnoOriginal = turnoId;
+    document.getElementById('modal-recupera').dataset.fechaOriginal = fecha;
+    document.getElementById('recupera-info').textContent = `${alumno?.nombre||alumno?.alumnoNombre} — elegí cuándo va a recuperar esta clase.`;
+    document.getElementById('recupera-fecha').value = '';
+    document.getElementById('recupera-turno').innerHTML = TURNOS.map(t=>`<option value="${t.id}">${t.horario}</option>`).join('');
+    document.getElementById('modal-recupera').classList.add('active');
+    return;
+  }
+
+  guardarAsistenciaDoc(alumnoId, turnoId, fecha, estado);
+  wrap.querySelectorAll('.btn-estado').forEach(b => { b.style.opacity = (b === btn) ? '1' : '0.35'; });
+}
+
+function guardarAsistenciaDoc(alumnoId, turnoId, fecha, estado){
   const docId = `${alumnoId}_${turnoId}_${fecha}`;
   db.collection('asistencias_ceramica').doc(docId).set({
-    alumnoId, turnoId, fecha, presente: chk.checked, uid: UID
-  }).then(()=> toast(chk.checked ? 'Presente' : 'Marcado ausente'))
+    alumnoId, turnoId, fecha, estado, uid: UID
+  }).then(()=> toast(estado==='presente' ? 'Presente' : estado==='ausente' ? 'Marcada ausente' : 'Recupera'))
     .catch(err => console.error(err));
+}
+
+function confirmarRecuperacion(){
+  const modal = document.getElementById('modal-recupera');
+  const alumnoId = modal.dataset.alumno;
+  const turnoOriginal = modal.dataset.turnoOriginal;
+  const fechaOriginal = modal.dataset.fechaOriginal;
+  const fechaRecupera = document.getElementById('recupera-fecha').value;
+  const turnoRecupera = document.getElementById('recupera-turno').value;
+  if(!fechaRecupera){ toast('Elegí la fecha de recuperación'); return; }
+
+  const alumno = alumnosCache.find(a=>a.id===alumnoId);
+  const alumnoNombre = alumno?.nombre || '';
+
+  db.collection('recuperaciones_ceramica').add({
+    alumnoId, alumnoNombre, fechaOriginal, turnoOriginal, fechaRecupera, turnoRecupera, uid: UID
+  }).then(()=>{
+    guardarAsistenciaDoc(alumnoId, turnoOriginal, fechaOriginal, 'recupera');
+    cerrarModal('modal-recupera');
+    toast('Recuperación programada');
+  }).catch(err => { console.error(err); toast('Error al programar'); });
 }
 
 /* ---------- PAGOS ---------- */
@@ -696,18 +849,33 @@ function guardarPago(){
   const alumnoId = document.getElementById('pago-alumno').value;
   const alumno = alumnosCache.find(a => a.id === alumnoId);
   if(!alumno){ toast('Elegí un alumno'); return; }
+  const mes = document.getElementById('pago-mes').value.trim();
+  if(!mes){ toast('Falta el mes'); return; }
+  const monto = Number(document.getElementById('pago-monto').value) || 0;
   const data = {
     alumnoId,
     alumnoNombre: alumno.nombre,
-    mes: document.getElementById('pago-mes').value.trim(),
-    monto: Number(document.getElementById('pago-monto').value) || 0,
+    mes,
+    monto,
     medio: document.getElementById('pago-medio').value,
     fecha: new Date().toISOString().slice(0,10),
     uid: UID
   };
-  db.collection('pagos_ceramica').add(data)
-    .then(()=>{ cerrarModal('modal-pago'); toast('Pago registrado'); })
-    .catch(err => { console.error(err); toast('Error al guardar'); });
+
+  // ID determinístico alumno+mes: evita que se registre dos veces la misma cuota
+  const docId = `${alumnoId}_${mes}`;
+  const ref = db.collection('pagos_ceramica').doc(docId);
+
+  ref.get().then(doc => {
+    if(doc.exists){
+      const anterior = doc.data();
+      const ok = confirm(`${alumno.nombre} ya tiene un pago cargado para ${mes} ($${Number(anterior.monto||0).toLocaleString('es-AR')}).\n¿Querés reemplazarlo por $${monto.toLocaleString('es-AR')}?`);
+      if(!ok) return;
+    }
+    ref.set(data)
+      .then(()=>{ cerrarModal('modal-pago'); toast('Pago registrado'); })
+      .catch(err => { console.error(err); toast('Error al guardar'); });
+  }).catch(err => console.error(err));
 }
 
 /* ---------- MODALES ---------- */
