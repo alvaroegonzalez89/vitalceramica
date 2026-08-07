@@ -298,8 +298,8 @@
         </div>
         <div style="overflow-x:auto;">
         <table>
-          <thead><tr><th>Alumno</th><th>Mes</th><th>Monto</th><th>Medio</th><th>Fecha</th></tr></thead>
-          <tbody id="tabla-pagos"><tr><td colspan="5" class="empty">Cargando...</td></tr></tbody>
+          <thead><tr><th>Alumno</th><th>Mes</th><th>Monto</th><th>Medio</th><th>Fecha</th><th></th></tr></thead>
+          <tbody id="tabla-pagos"><tr><td colspan="6" class="empty">Cargando...</td></tr></tbody>
         </table>
         </div>
       </div>
@@ -393,7 +393,8 @@
 <!-- ---------- MODAL PAGO ---------- -->
 <div class="modal-bg" id="modal-pago">
   <div class="modal">
-    <h3>Registrar pago</h3>
+    <h3 id="modal-pago-title">Registrar pago</h3>
+    <input type="hidden" id="pago-id">
     <label class="f">Alumno</label>
     <select id="pago-alumno" style="margin-bottom:12px;"></select>
     <div class="form-grid">
@@ -826,7 +827,7 @@ function poblarSelectPago(){
 function renderPagos(){
   const tbody = document.getElementById('tabla-pagos');
   if(pagosCache.length === 0){
-    tbody.innerHTML = '<tr><td colspan="5" class="empty">Todavía no hay pagos registrados.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="empty">Todavía no hay pagos registrados.</td></tr>';
     return;
   }
   tbody.innerHTML = pagosCache.map(p => `
@@ -836,13 +837,45 @@ function renderPagos(){
       <td>$${Number(p.monto||0).toLocaleString('es-AR')}</td>
       <td>${p.medio||''}</td>
       <td>${p.fecha||''}</td>
+      <td style="text-align:right;">
+        <button class="icon-btn" onclick="editarPago('${p.id}')" title="Editar">✎</button>
+        <button class="icon-btn" onclick="borrarPago('${p.id}')" title="Eliminar">🗑</button>
+      </td>
     </tr>`).join('');
 }
 
 function abrirModalPago(){
+  document.getElementById('modal-pago-title') && (document.getElementById('modal-pago-title').textContent = 'Registrar pago');
+  document.getElementById('pago-id').value = '';
+  document.getElementById('pago-alumno').disabled = false;
+  document.getElementById('pago-mes').disabled = false;
+  poblarSelectPago();
   document.getElementById('pago-mes').value = new Date().toISOString().slice(0,7);
   document.getElementById('pago-monto').value = 45000;
+  document.getElementById('pago-medio').value = 'efectivo';
   document.getElementById('modal-pago').classList.add('active');
+}
+
+function editarPago(id){
+  const p = pagosCache.find(x => x.id === id);
+  if(!p) return;
+  document.getElementById('modal-pago-title') && (document.getElementById('modal-pago-title').textContent = 'Editar pago');
+  document.getElementById('pago-id').value = id;
+  poblarSelectPago();
+  document.getElementById('pago-alumno').value = p.alumnoId;
+  document.getElementById('pago-alumno').disabled = true;
+  document.getElementById('pago-mes').value = p.mes;
+  document.getElementById('pago-mes').disabled = true;
+  document.getElementById('pago-monto').value = p.monto;
+  document.getElementById('pago-medio').value = p.medio || 'efectivo';
+  document.getElementById('modal-pago').classList.add('active');
+}
+
+function borrarPago(id){
+  if(!confirm('¿Eliminar este pago? No se puede deshacer.')) return;
+  db.collection('pagos_ceramica').doc(id).delete()
+    .then(()=> toast('Pago eliminado'))
+    .catch(err => { console.error(err); toast('Error al eliminar'); });
 }
 
 function guardarPago(){
@@ -852,6 +885,8 @@ function guardarPago(){
   const mes = document.getElementById('pago-mes').value.trim();
   if(!mes){ toast('Falta el mes'); return; }
   const monto = Number(document.getElementById('pago-monto').value) || 0;
+  const editId = document.getElementById('pago-id').value;
+
   const data = {
     alumnoId,
     alumnoNombre: alumno.nombre,
@@ -862,20 +897,30 @@ function guardarPago(){
     uid: UID
   };
 
-  // ID determinístico alumno+mes: evita que se registre dos veces la misma cuota
-  const docId = `${alumnoId}_${mes}`;
-  const ref = db.collection('pagos_ceramica').doc(docId);
-
-  ref.get().then(doc => {
-    if(doc.exists){
-      const anterior = doc.data();
-      const ok = confirm(`${alumno.nombre} ya tiene un pago cargado para ${mes} ($${Number(anterior.monto||0).toLocaleString('es-AR')}).\n¿Querés reemplazarlo por $${monto.toLocaleString('es-AR')}?`);
-      if(!ok) return;
-    }
-    ref.set(data)
-      .then(()=>{ cerrarModal('modal-pago'); toast('Pago registrado'); })
+  if(editId){
+    // edición de un pago existente: se sabe que el doc existe, update directo (sin get previo)
+    db.collection('pagos_ceramica').doc(editId).update(data)
+      .then(()=>{ cerrarModal('modal-pago'); toast('Pago actualizado'); })
       .catch(err => { console.error(err); toast('Error al guardar'); });
-  }).catch(err => console.error(err));
+    return;
+  }
+
+  // pago nuevo: chequeamos duplicados con una consulta (no con un get directo,
+  // que Firestore rechaza por permisos cuando el documento todavía no existe)
+  const yaExiste = pagosCache.find(p => p.alumnoId === alumnoId && p.mes === mes);
+  if(yaExiste){
+    const ok = confirm(`${alumno.nombre} ya tiene un pago cargado para ${mes} ($${Number(yaExiste.monto||0).toLocaleString('es-AR')}).\n¿Querés reemplazarlo por $${monto.toLocaleString('es-AR')}?`);
+    if(!ok) return;
+    db.collection('pagos_ceramica').doc(yaExiste.id).update(data)
+      .then(()=>{ cerrarModal('modal-pago'); toast('Pago actualizado'); })
+      .catch(err => { console.error(err); toast('Error al guardar'); });
+    return;
+  }
+
+  const docId = `${alumnoId}_${mes}`;
+  db.collection('pagos_ceramica').doc(docId).set(data)
+    .then(()=>{ cerrarModal('modal-pago'); toast('Pago registrado'); })
+    .catch(err => { console.error(err); toast('Error al guardar'); });
 }
 
 /* ---------- MODALES ---------- */
